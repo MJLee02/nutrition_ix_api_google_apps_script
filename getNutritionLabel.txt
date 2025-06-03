@@ -1,0 +1,90 @@
+// Create your NutritionIX account and insert your APP ID and API Key below:
+const APP_ID = '[INSERT YOUR APP ID HERE]';
+const API_KEY = '[INSERT YOUR API KEY HERE]';
+
+/**
+ * Fetch nutrition label model data using Nutritionix API
+ */
+function getNutritionLabel(foodName) {
+  const endpoint = 'https://trackapi.nutritionix.com/v2/natural/nutrients';
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-app-id': APP_ID,
+    'x-app-key': API_KEY,
+  };
+
+  const body = {
+    query: foodName,
+    timezone: 'US/Eastern'
+  };
+
+  const options = {
+    method: 'post',
+    headers: headers,
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true,
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(endpoint, options);
+    const json = JSON.parse(response.getContentText());
+
+    if (!json.foods || json.foods.length === 0) {
+      return ['No data found'];
+    }
+
+    const f = json.foods[0];
+
+    // Default values
+    const totalFat = f.nf_total_fat ?? 0;
+
+    /**
+     * This calculates calories from fat if and only if calories from fat is missing
+     * We can get away with this as the caloric density of fat is 9cal/g
+     * Source:
+     * Mayo Clinic (https://www.mayoclinic.org/healthy-lifestyle/nutrition-and-healthy-eating/in-depth/fat/art-20045550)
+     */ 
+    let caloriesFromFat = f.nf_calories_from_fat;
+    if (caloriesFromFat == null) {
+      caloriesFromFat = totalFat * 9;
+    }
+
+    let saturatedFat = f.nf_saturated_fat;
+    let transFat = f.nf_trans_fatty_acid;
+
+    // Assumption message starts here
+    let assumptionNote = 'Using NutritionIX API.';
+    
+    if (saturatedFat == null) {
+      saturatedFat = 0;
+      assumptionNote += ' Saturated fat assumed to be 0.';
+    }
+
+    if (transFat == null) {
+      transFat = 0;
+      assumptionNote += ' Trans fat assumed to be 0.';
+    }
+
+    const safeFoodName = encodeURIComponent(f.food_name.toLowerCase().replace(/\s+/g, '-'));
+    const sourceURL = `https://www.nutritionix.com/food/${safeFoodName}`;
+
+    return [
+      f.serving_weight_grams,
+      f.nf_calories,
+      caloriesFromFat,
+      totalFat,
+      saturatedFat,
+      transFat,
+      f.nf_cholesterol,
+      f.nf_sodium,
+      f.nf_total_carbohydrate,
+      f.nf_dietary_fiber,
+      f.nf_sugars,
+      f.nf_protein,
+      sourceURL,
+      assumptionNote.trim()  // Column R
+    ];
+  } catch (e) {
+    return ['Error: ' + e.toString()];
+  }
+}
